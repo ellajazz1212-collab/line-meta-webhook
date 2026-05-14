@@ -12,7 +12,6 @@ const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_TOKEN = process.env.META_CAPI_TOKEN;
 
-// 驗證 LINE 簽名
 function verifyLineSignature(req) {
   const signature = req.headers['x-line-signature'];
   const hash = crypto
@@ -22,13 +21,22 @@ function verifyLineSignature(req) {
   return hash === signature;
 }
 
-// 回報 META CAPI
-async function sendToMetaCAPI(lineUserId) {
+async function sendToMetaCAPI(lineUserId, fbclid) {
   const eventTime = Math.floor(Date.now() / 1000);
   const hashedUserId = crypto
     .createHash('sha256')
     .update(lineUserId)
     .digest('hex');
+
+  const userData = {
+    extern_id: hashedUserId
+  };
+
+  // 如果有 fbclid 就加進去
+  if (fbclid) {
+    userData.fbc = `fb.1.${Date.now()}.${fbclid}`;
+    console.log('帶入 fbclid:', fbclid);
+  }
 
   const payload = {
     data: [
@@ -36,9 +44,7 @@ async function sendToMetaCAPI(lineUserId) {
         event_name: 'CompleteRegistration',
         event_time: eventTime,
         action_source: 'other',
-        user_data: {
-          extern_id: hashedUserId
-        }
+        user_data: userData
       }
     ]
   };
@@ -54,7 +60,6 @@ async function sendToMetaCAPI(lineUserId) {
   }
 }
 
-// LINE Webhook 接收端點
 app.post('/webhook', async (req, res) => {
   if (!verifyLineSignature(req)) {
     console.warn('簽名驗證失敗');
@@ -66,19 +71,30 @@ app.post('/webhook', async (req, res) => {
   for (const event of events) {
     if (event.type === 'follow') {
       const lineUserId = event.source.userId;
-      console.log('新好友加入:', lineUserId);
-      await sendToMetaCAPI(lineUserId);
+
+      // 從 ref 參數抓 fbclid
+      let fbclid = null;
+      const ref = event.follow?.referralInfo?.ref || '';
+      if (ref.startsWith('fbclid_')) {
+        fbclid = ref.replace('fbclid_', '');
+      }
+
+      console.log('新好友加入:', lineUserId, '| ref:', ref, '| fbclid:', fbclid);
+      await sendToMetaCAPI(lineUserId, fbclid);
     }
   }
 
   res.status(200).send('OK');
 });
 
-// 健康檢查
 app.get('/', (req, res) => {
   res.send('Webhook server is running!');
 });
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
