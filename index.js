@@ -33,7 +33,7 @@ async function sendToMetaCAPI(lineUserId) {
   const payload = {
     data: [
       {
-        event_name: 'Lead',
+        event_name: 'CompleteRegistration',
         event_time: eventTime,
         action_source: 'other',
         user_data: {
